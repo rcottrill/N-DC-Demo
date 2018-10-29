@@ -309,57 +309,6 @@
                                 }
                             ]
                         }
-                    },
-                    {
-                        "name": "WebTier-sn",
-                        "properties": {
-                            "addressPrefix": "[variables('WTsubnetPrefix')]",
-                            "serviceEndpoints": [
-                                {
-                                    "service": "Microsoft.AzureActiveDirectory"
-                                },
-                                {
-                                    "service": "Microsoft.Sql"
-                                },
-                                {
-                                    "service": "Microsoft.Storage"
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "name": "BusinessTier-sn",
-                        "properties": {
-                            "addressPrefix": "[variables('BTsubnetPrefix')]",
-                            "serviceEndpoints": [
-                                {
-                                    "service": "Microsoft.AzureActiveDirectory"
-                                },
-                                {
-                                    "service": "Microsoft.Sql"
-                                },
-                                {
-                                    "service": "Microsoft.Storage"
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "name": "DataTier-sn",
-                        "properties": {
-                            "addressPrefix": "[variables('DTsubnetPrefix')]",
-                            "serviceEndpoints": [
-                                {
-                                    "service": "Microsoft.AzureActiveDirectory"
-                                },
-                                {
-                                    "service": "Microsoft.Sql"
-                                },
-                                {
-                                    "service": "Microsoft.Storage"
-                                }
-                            ]
-                        }
                     }
                 ]
             }

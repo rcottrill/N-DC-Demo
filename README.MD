@@ -4,6 +4,4 @@ This template will deploy a JumoBox, First Dc & N other Dcs (along with a new VN
 
 Click the button below to deploy
 
-<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fhttps://raw.githubusercontent.com/rcottrill/N-DC-Demo/master/N-DC-Forest.json" target="_blank">
-    <img src="http://azuredeploy.net/deploybutton.png"/>
-</a>
+[![Deploy to Azure](https://azuredeploy.net/deploybutton.png)](https://azuredeploy.net/)
