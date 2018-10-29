@@ -4,7 +4,12 @@
     "parameters": {
         "location": {
             "type": "string",
-            "defaultValue": "[resourceGroup().location]",
+            "defaultValue": "uksouth",
+            "allowedValues": [
+                "ukwest",
+                "westeurope",
+                "northeurope"
+            ],
             "metadata": {
                 "description": "Location for all resources."
             }
@@ -522,39 +527,39 @@
                 ]
             }
         },
- {
-    "apiVersion": "2016-03-30",
-    "type": "Microsoft.Network/networkInterfaces",
-    "name": "[concat(variables('DCRepName'), copyindex(2), '-nic')]",
-    "location": "[parameters('location')]",
-    "copy": {
-        "name": "nicLoop",
-        "count": "[parameters('DCReplicas')]"
-    },
-    "tags": {
-        "owner": "[parameters('ownerTag')]",
-        "application": "[parameters('applicationTag')]",
-        "environment": "[parameters('environmentTag')]",
-        "criticality": "[parameters('criticalityTag')]"
-    },
-    "dependsOn": [
-        "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
-    ],
-    "properties": {
-        "ipConfigurations": [
-            {
-                "name": "ipconfig1",
-                "properties": {
-                    "privateIPAllocationMethod": "Static",
-                    "privateIPAddress": "[concat(variables('ADsubnetPrefixSplit')[0],'.',variables('ADsubnetPrefixSplit')[1],'.',variables('ADsubnetPrefixSplit')[2],'.', add(add(int(variables('ADsubnetPrefixSplit')[3]),4), copyindex(1)))]",
-                    "subnet": {
-                        "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), 'ADDS-sn')]"
+        {
+            "apiVersion": "2016-03-30",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(variables('DCRepName'), copyindex(2), '-nic')]",
+            "location": "[parameters('location')]",
+            "copy": {
+                "name": "nicLoop",
+                "count": "[parameters('DCReplicas')]"
+            },
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Static",
+                            "privateIPAddress": "[concat(variables('ADsubnetPrefixSplit')[0],'.',variables('ADsubnetPrefixSplit')[1],'.',variables('ADsubnetPrefixSplit')[2],'.', add(add(int(variables('ADsubnetPrefixSplit')[3]),4), copyindex(1)))]",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), 'ADDS-sn')]"
+                            }
+                        }
                     }
-                }
+                ]
             }
-        ]
-    }
-},
+        },
         {
             "apiVersion": "2018-04-01",
             "type": "Microsoft.Compute/virtualMachines",
@@ -784,41 +789,41 @@
                 }
             ]
         },
-    {
-        "type": "Microsoft.Compute/virtualMachines/extensions",
-        "name": "[concat(variables('DCRepName'), copyindex(2), '/Anti-Malware')]",
-        "apiVersion": "2015-05-01-preview",
-        "location": "[parameters('location')]",
-        "copy": {
-            "name": "DCReplicaAV",
-            "count": "[parameters('DCReplicas')]"
-        },
-        "dependsOn": [
-            "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('DCRepName'), copyindex(2)))]"
-        ],
-        "properties": {
-            "publisher": "Microsoft.Azure.Security",
-            "type": "IaaSAntimalware",
-            "typeHandlerVersion": "1.3",
-            "autoUpgradeMinorVersion": true,
-            "settings": {
-                "AntimalwareEnabled": "true",
-                "Exclusions": {
-                    "Extensions": "",
-                    "Paths": "",
-                    "Processes": ""
-                },
-                "RealtimeProtectionEnabled": "true",
-                "ScheduledScanSettings": {
-                    "isEnabled": "true",
-                    "scanType": "Quick",
-                    "day": "7",
-                    "time": "120"
-                }
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(variables('DCRepName'), copyindex(2), '/Anti-Malware')]",
+            "apiVersion": "2015-05-01-preview",
+            "location": "[parameters('location')]",
+            "copy": {
+                "name": "DCReplicaAV",
+                "count": "[parameters('DCReplicas')]"
             },
-            "protectedSettings": null
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('DCRepName'), copyindex(2)))]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Azure.Security",
+                "type": "IaaSAntimalware",
+                "typeHandlerVersion": "1.3",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "AntimalwareEnabled": "true",
+                    "Exclusions": {
+                        "Extensions": "",
+                        "Paths": "",
+                        "Processes": ""
+                    },
+                    "RealtimeProtectionEnabled": "true",
+                    "ScheduledScanSettings": {
+                        "isEnabled": "true",
+                        "scanType": "Quick",
+                        "day": "7",
+                        "time": "120"
+                    }
+                },
+                "protectedSettings": null
+            }
         }
-    }
     ],
     "outputs": {
         "hostname": {
