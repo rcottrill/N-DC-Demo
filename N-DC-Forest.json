@@ -1,0 +1,829 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "location": {
+            "type": "string",
+            "defaultValue": "[resourceGroup().location]",
+            "metadata": {
+                "description": "Location for all resources."
+            }
+        },
+        "VnetName": {
+            "type": "string",
+            "defaultValue": "ADDemo",
+            "metadata": {
+                "description": "Name for Vnet. Node: -Vnet01 gets added to the end."
+            }
+        },
+        "VnetAddressCIDR": {
+            "type": "string",
+            "defaultValue": "10.0.1.0/24",
+            "metadata": {
+                "description": "VNet CIDR. Must be /24"
+            }
+        },
+        "windowsOSVersion": {
+            "type": "string",
+            "defaultValue": "2016-Datacenter",
+            "allowedValues": [
+                "2012-R2-Datacenter",
+                "2016-Datacenter"
+            ],
+            "metadata": {
+                "description": "The Windows version for all the VMs. This will pick a fully patched image of this given Windows version."
+            }
+        },
+        "adminUsername": {
+            "type": "string",
+            "defaultValue": "DCAdmin",
+            "metadata": {
+                "description": "Username for all the Virtual Machines."
+            }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Password for all the Virtual Machine."
+            }
+        },
+        "DCNamePrefix": {
+            "type": "string",
+            "defaultValue": "ADDC",
+            "metadata": {
+                "description": "The DC Name prefix. Note: -01 & -02 will be automatically added."
+            }
+        },
+        "DCSize": {
+            "type": "string",
+            "defaultValue": "Standard_B2s",
+            "allowedValues": [
+                "Standard_B2s",
+                "Standard_A2m_v2",
+                "Standard_D2_v3",
+                "Standard_A2_v2"
+            ],
+            "metadata": {
+                "description": "The Instance size for the jb VM."
+            }
+        },
+        "domainName": {
+            "type": "string",
+            "defaultValue": "DEMODC.local",
+            "metadata": {
+                "description": "The FQDN of the AD Domain to be created."
+            }
+        },
+        "DCReplicas": {
+            "type": "int",
+            "defaultValue": 1,
+            "minValue": 1,
+            "maxValue": 5,
+            "metadata": {
+                "description": "Number of VMs to deploy, limit 5 since this is a demo."
+            }
+        },
+        "jbvmName": {
+            "type": "string",
+            "defaultValue": "JB01-vm",
+            "metadata": {
+                "description": "Name for the JumpBox Virtual Machine. Use this to access the new Domain controllers."
+            }
+        },
+        "jbvmSize": {
+            "type": "string",
+            "defaultValue": "Standard_B2s",
+            "allowedValues": [
+                "Standard_B2s",
+                "Standard_A2m_v2",
+                "Standard_D2_v3",
+                "Standard_A2_v2"
+            ],
+            "metadata": {
+                "description": "The Instance size for the jb VM."
+            }
+        },
+        "ownerTag": {
+            "type": "string",
+            "defaultValue": "ANS-Demo-Team",
+            "metadata": {
+                "description": "Name of the owner of the VM"
+            }
+        },
+        "applicationTag": {
+            "type": "string",
+            "defaultValue": "3-Tier-SQL",
+            "metadata": {
+                "description": "Application the VM belongs to"
+            }
+        },
+        "environmentTag": {
+            "type": "string",
+            "defaultValue": "Dev",
+            "metadata": {
+                "description": "Environment the VM belongs to. E.g. Dev, Test, Prod"
+            }
+        },
+        "criticalityTag": {
+            "type": "string",
+            "defaultValue": "Tier 4",
+            "allowedValues": [
+                "Tier 1",
+                "Tier 2",
+                "Tier 3",
+                "Tier 4"
+            ],
+            "metadata": {
+                "description": "Business criticality of the application. Tier 1 is the highest criticality"
+            }
+        },
+        "_artifactsLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "The location of resources, such as templates and DSC modules, that the template depends on"
+            },
+            "defaultValue": "https://github.com/rcottrill/N-DC-Demo/raw/master"
+        },
+        "_artifactsLocationSasToken": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Auto-generated token to access _artifactsLocation"
+            },
+            "defaultValue": ""
+        }
+    },
+    "variables": {
+        "VnetCIDRaddressPrefix": "[parameters('VnetAddressCIDR')]",
+        "CIDRSplit": "[split(replace(variables('VnetCIDRaddressPrefix'),'/','.'),'.')]",
+        "MgmtsubnetPrefix": "[concat(variables('CIDRSplit')[0],'.',variables('CIDRSplit')[1],'.',variables('CIDRSplit')[2],'.192/27')]",
+        "ADsubnetPrefix": "[concat(variables('CIDRSplit')[0],'.',variables('CIDRSplit')[1],'.',variables('CIDRSplit')[2],'.160/27')]",
+        "WTsubnetPrefix": "[concat(variables('CIDRSplit')[0],'.',variables('CIDRSplit')[1],'.',variables('CIDRSplit')[2],'.0/26')]",
+        "BTsubnetPrefix": "[concat(variables('CIDRSplit')[0],'.',variables('CIDRSplit')[1],'.',variables('CIDRSplit')[2],'.64/26')]",
+        "DTsubnetPrefix": "[concat(variables('CIDRSplit')[0],'.',variables('CIDRSplit')[1],'.',variables('CIDRSplit')[2],'.128/27')]",
+        "ADsubnetPrefixSplit": "[split(replace(variables('ADsubnetPrefix'),'/','.'),'.')]",
+        "virtualNetworkName": "[concat(parameters('VnetName'), '-vnet01')]",
+        "diagnosticStorageAccountName": "[concat('diagst', uniqueString(resourceGroup().id))]",
+        "jb01nicName": "[concat(parameters('jbvmName'),'-nic')]",
+        "jb01PIP": "[concat(parameters('jbvmName'), '-pip')]",
+        "DC01Name": "[concat(parameters('DCNamePrefix'),'-01')]",
+        "DC02Name": "[concat(parameters('DCNamePrefix'),'-02')]",
+        "DCAvailabilitySet": "[concat(parameters('DCNamePrefix'),'-AVSet01')]",
+        "DC01Nic": "[concat(parameters('DCNamePrefix'),'-01-nic')]",
+        "DC01IP": "[concat(variables('ADsubnetPrefixSplit')[0],'.',variables('ADsubnetPrefixSplit')[1],'.',variables('ADsubnetPrefixSplit')[2],'.', add(int(variables('ADsubnetPrefixSplit')[3]),4))]",
+        "DCRepName": "[concat(parameters('DCNamePrefix'),'-0')]",
+        "DC02Nic": "[concat(parameters('DCNamePrefix'),'-02-nic')]",
+        "DC02IP": "[concat(variables('ADsubnetPrefixSplit')[0],'.',variables('ADsubnetPrefixSplit')[1],'.',variables('ADsubnetPrefixSplit')[2],'.',add(int(variables('ADsubnetPrefixSplit')[3]),5))]",
+        "GitLocation": "https://raw.githubusercontent.com/rcottrill/3-Tier-SQL/master",
+        "NSGName": "[concat('NSG-', parameters('VnetName'))]"
+    },
+    "resources": [
+        {
+            "name": "[variables('diagnosticStorageAccountName')]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "location": "[parameters('location')]",
+            "apiVersion": "2016-01-01",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "dependsOn": [],
+            "kind": "Storage"
+        },
+        {
+            "apiVersion": "2016-03-30",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "name": "[variables('jb01PIP')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "properties": {
+                "publicIPAllocationMethod": "Dynamic",
+                "dnsSettings": {
+                    "domainNameLabel": "[toLower(concat(parameters('jbvmName'),uniqueString(subscription().subscriptionId)))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2017-03-01",
+            "name": "[variables('NSGName')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "RDP",
+                        "properties": {
+                            "access": "Allow",
+                            "description": "Inbound RDP rule",
+                            "direction": "Inbound",
+                            "destinationAddressPrefix": "[variables('MgmtsubnetPrefix')]",
+                            "protocol": "Tcp",
+                            "destinationPortRange": 3389,
+                            "sourcePortRange": "*",
+                            "priority": 500,
+                            "sourceAddressPrefix": "*"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2017-09-01",
+            "type": "Microsoft.Network/virtualNetworks",
+            "name": "[variables('virtualNetworkName')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups/', variables('NSGName'))]"
+            ],
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[variables('VnetCIDRaddressPrefix')]"
+                    ]
+                },
+                "dhcpOptions": {
+                    "dnsServers": [
+                        "[variables('DC01IP')]",
+                        "[variables('DC02IP')]",
+                        "8.8.8.8",
+                        "8.8.4.4"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "Management-sn",
+                        "properties": {
+                            "addressPrefix": "[variables('MgmtsubnetPrefix')]",
+                            "networkSecurityGroup": {
+                                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('NSGName'))]"
+                            },
+                            "serviceEndpoints": [
+                                {
+                                    "service": "Microsoft.AzureActiveDirectory"
+                                },
+                                {
+                                    "service": "Microsoft.Sql"
+                                },
+                                {
+                                    "service": "Microsoft.Storage"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "ADDS-sn",
+                        "properties": {
+                            "addressPrefix": "[variables('ADsubnetPrefix')]",
+                            "networkSecurityGroup": {
+                                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('NSGName'))]"
+                            },
+                            "serviceEndpoints": [
+                                {
+                                    "service": "Microsoft.AzureActiveDirectory"
+                                },
+                                {
+                                    "service": "Microsoft.Sql"
+                                },
+                                {
+                                    "service": "Microsoft.Storage"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "WebTier-sn",
+                        "properties": {
+                            "addressPrefix": "[variables('WTsubnetPrefix')]",
+                            "serviceEndpoints": [
+                                {
+                                    "service": "Microsoft.AzureActiveDirectory"
+                                },
+                                {
+                                    "service": "Microsoft.Sql"
+                                },
+                                {
+                                    "service": "Microsoft.Storage"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "BusinessTier-sn",
+                        "properties": {
+                            "addressPrefix": "[variables('BTsubnetPrefix')]",
+                            "serviceEndpoints": [
+                                {
+                                    "service": "Microsoft.AzureActiveDirectory"
+                                },
+                                {
+                                    "service": "Microsoft.Sql"
+                                },
+                                {
+                                    "service": "Microsoft.Storage"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "DataTier-sn",
+                        "properties": {
+                            "addressPrefix": "[variables('DTsubnetPrefix')]",
+                            "serviceEndpoints": [
+                                {
+                                    "service": "Microsoft.AzureActiveDirectory"
+                                },
+                                {
+                                    "service": "Microsoft.Sql"
+                                },
+                                {
+                                    "service": "Microsoft.Storage"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2016-03-30",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[variables('jb01nicName')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses/', variables('jb01PIP'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses',variables('jb01PIP'))]"
+                            },
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), 'Management-sn')]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2018-04-01",
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[parameters('jbvmName')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/', variables('diagnosticStorageAccountName'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces/', variables('jb01nicName'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('jbvmSize')]"
+                },
+                "osProfile": {
+                    "computerName": "[parameters('jbvmName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "[parameters('windowsOSVersion')]",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "name": "[parameters('jbvmName')]",
+                        "osType": "Windows",
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "StandardSSD_LRS"
+                        },
+                        "caching": "ReadWrite"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('jb01nicName'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts/', variables('diagnosticStorageAccountName'))).primaryEndpoints.blob]"
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "extensions",
+                    "name": "Anti-Malware",
+                    "apiVersion": "2017-03-30",
+                    "location": "[parameters('location')]",
+                    "dependsOn": [
+                        "[concat('Microsoft.Compute/virtualMachines/', parameters('jbvmName'))]"
+                    ],
+                    "properties": {
+                        "publisher": "Microsoft.Azure.Security",
+                        "type": "IaaSAntimalware",
+                        "typeHandlerVersion": "1.3",
+                        "autoUpgradeMinorVersion": true,
+                        "settings": {
+                            "AntimalwareEnabled": "true",
+                            "Exclusions": {
+                                "Extensions": "",
+                                "Paths": "",
+                                "Processes": ""
+                            },
+                            "RealtimeProtectionEnabled": "true",
+                            "ScheduledScanSettings": {
+                                "isEnabled": "true",
+                                "scanType": "Quick",
+                                "day": "7",
+                                "time": "120"
+                            }
+                        },
+                        "protectedSettings": null
+                    }
+                }
+            ]
+        },
+        {
+            "apiVersion": "2017-03-30",
+            "type": "Microsoft.Compute/availabilitySets",
+            "location": "[parameters('location')]",
+            "name": "[variables('DCAvailabilitySet')]",
+            "properties": {
+                "PlatformUpdateDomainCount": 5,
+                "PlatformFaultDomainCount": 3
+            },
+            "sku": {
+                "name": "Aligned"
+            }
+        },
+        {
+            "apiVersion": "2016-03-30",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[variables('DC01Nic')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Static",
+                            "privateIPAddress": "[variables('DC01IP')]",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), 'ADDS-sn')]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+ {
+    "apiVersion": "2016-03-30",
+    "type": "Microsoft.Network/networkInterfaces",
+    "name": "[concat(variables('DCRepName'), copyindex(2), '-nic')]",
+    "location": "[parameters('location')]",
+    "copy": {
+        "name": "nicLoop",
+        "count": "[parameters('DCReplicas')]"
+    },
+    "tags": {
+        "owner": "[parameters('ownerTag')]",
+        "application": "[parameters('applicationTag')]",
+        "environment": "[parameters('environmentTag')]",
+        "criticality": "[parameters('criticalityTag')]"
+    },
+    "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+    ],
+    "properties": {
+        "ipConfigurations": [
+            {
+                "name": "ipconfig1",
+                "properties": {
+                    "privateIPAllocationMethod": "Static",
+                    "privateIPAddress": "[concat(variables('ADsubnetPrefixSplit')[0],'.',variables('ADsubnetPrefixSplit')[1],'.',variables('ADsubnetPrefixSplit')[2],'.', add(add(int(variables('ADsubnetPrefixSplit')[3]),4), copyindex(1)))]",
+                    "subnet": {
+                        "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), 'ADDS-sn')]"
+                    }
+                }
+            }
+        ]
+    }
+},
+        {
+            "apiVersion": "2018-04-01",
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('DC01Name')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/', variables('diagnosticStorageAccountName'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces/', variables('DC01Nic'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('DCSize')]"
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('DCAvailabilitySet'))]"
+                },
+                "osProfile": {
+                    "computerName": "[variables('DC01Name')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "[parameters('windowsOSVersion')]",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "name": "[concat(variables('DC01Name'),'-OSDisk')]",
+                        "osType": "Windows",
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "StandardSSD_LRS"
+                        },
+                        "caching": "ReadWrite"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('DC01Nic'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts/', variables('diagnosticStorageAccountName'))).primaryEndpoints.blob]"
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "extensions",
+                    "name": "ConfigureAD",
+                    "apiVersion": "2017-03-30",
+                    "location": "[parameters('location')]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', variables('DC01Name'))]"
+                    ],
+                    "properties": {
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": true,
+                        "settings": {
+                            "ModulesUrl": "[concat(parameters('_artifactsLocation'), '/DSC/ConfigureADServers.zip', parameters('_artifactsLocationSasToken'))]",
+                            "ConfigurationFunction": "ConfigureADServers.ps1\\ConfigureADServers",
+                            "Properties": {
+                                "DomainName": "[parameters('domainName')]",
+                                "VMRole": "FirstDC",
+                                "DC01IP": "[variables('DC01IP')]",
+                                "DC02IP": "[variables('DC02IP')]",
+                                "SiteCIDR": "[variables('VnetCIDRaddressPrefix')]",
+                                "AdminCreds": {
+                                    "UserName": "[parameters('adminUsername')]",
+                                    "Password": "PrivateSettingsRef:AdminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "Items": {
+                                "AdminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(variables('DC01Name'),'/', 'Anti-Malware')]",
+            "apiVersion": "2015-05-01-preview",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Compute/virtualMachines/', variables('DC01Name'))]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Azure.Security",
+                "type": "IaaSAntimalware",
+                "typeHandlerVersion": "1.3",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "AntimalwareEnabled": "true",
+                    "Exclusions": {
+                        "Extensions": "",
+                        "Paths": "",
+                        "Processes": ""
+                    },
+                    "RealtimeProtectionEnabled": "true",
+                    "ScheduledScanSettings": {
+                        "isEnabled": "true",
+                        "scanType": "Quick",
+                        "day": "7",
+                        "time": "120"
+                    }
+                },
+                "protectedSettings": null
+            }
+        },
+        {
+            "apiVersion": "2018-04-01",
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[concat(variables('DCRepName'), copyindex(2))]",
+            "location": "[parameters('location')]",
+            "copy": {
+                "name": "DCRepLoop",
+                "count": "[parameters('DCReplicas')]"
+            },
+            "tags": {
+                "owner": "[parameters('ownerTag')]",
+                "application": "[parameters('applicationTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "criticality": "[parameters('criticalityTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/', variables('diagnosticStorageAccountName'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces/', concat(variables('DCRepName'), copyindex(2), '-nic'))]",
+                "[resourceId('Microsoft.Compute/virtualMachines', variables('DC01Name'))]",
+                "[concat('Microsoft.Compute/virtualMachines/', variables('DC01Name'),'/extensions/ConfigureAD')]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('DCSize')]"
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('DCAvailabilitySet'))]"
+                },
+                "osProfile": {
+                    "computerName": "[concat(variables('DCRepName'), copyindex(2))]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "[parameters('windowsOSVersion')]",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "name": "[concat(variables('DCRepName'), copyindex(2), '-OSDisk')]",
+                        "osType": "Windows",
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "StandardSSD_LRS"
+                        },
+                        "caching": "ReadWrite"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces/', concat(variables('DCRepName'), copyindex(2), '-nic'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts/', variables('diagnosticStorageAccountName'))).primaryEndpoints.blob]"
+                    }
+                }
+            },
+            "resources": [
+                {
+                    "type": "extensions",
+                    "name": "ConfigureADServers",
+                    "apiVersion": "2017-03-30",
+                    "location": "[parameters('location')]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('DCRepName'), copyindex(2)))]"
+                    ],
+                    "properties": {
+                        "publisher": "Microsoft.Powershell",
+                        "type": "DSC",
+                        "typeHandlerVersion": "2.19",
+                        "autoUpgradeMinorVersion": true,
+                        "settings": {
+                            "ModulesUrl": "[concat(parameters('_artifactsLocation'), '/DSC/ConfigureADServers.zip', parameters('_artifactsLocationSasToken'))]",
+                            "ConfigurationFunction": "ConfigureADServers.ps1\\ConfigureADServers",
+                            "Properties": {
+                                "DomainName": "[parameters('domainName')]",
+                                "VMRole": "DCReplica",
+                                "DC01IP": "[variables('DC01IP')]",
+                                "DC02IP": "[variables('DC02IP')]",
+                                "SiteCIDR": "[variables('VnetCIDRaddressPrefix')]",
+                                "AdminCreds": {
+                                    "UserName": "[parameters('adminUsername')]",
+                                    "Password": "PrivateSettingsRef:AdminPassword"
+                                }
+                            }
+                        },
+                        "protectedSettings": {
+                            "Items": {
+                                "AdminPassword": "[parameters('adminPassword')]"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+    {
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "name": "[concat(variables('DCRepName'), copyindex(2), '/Anti-Malware')]",
+        "apiVersion": "2015-05-01-preview",
+        "location": "[parameters('location')]",
+        "copy": {
+            "name": "DCReplicaAV",
+            "count": "[parameters('DCReplicas')]"
+        },
+        "dependsOn": [
+            "[resourceId('Microsoft.Compute/virtualMachines', concat(variables('DCRepName'), copyindex(2)))]"
+        ],
+        "properties": {
+            "publisher": "Microsoft.Azure.Security",
+            "type": "IaaSAntimalware",
+            "typeHandlerVersion": "1.3",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+                "AntimalwareEnabled": "true",
+                "Exclusions": {
+                    "Extensions": "",
+                    "Paths": "",
+                    "Processes": ""
+                },
+                "RealtimeProtectionEnabled": "true",
+                "ScheduledScanSettings": {
+                    "isEnabled": "true",
+                    "scanType": "Quick",
+                    "day": "7",
+                    "time": "120"
+                }
+            },
+            "protectedSettings": null
+        }
+    }
+    ],
+    "outputs": {
+        "hostname": {
+            "type": "string",
+            "value": "[reference(variables('jb01PIP')).dnsSettings.fqdn]"
+        }
+    }
+}
